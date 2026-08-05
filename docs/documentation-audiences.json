@@ -137,6 +137,10 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/dispatch-discipline/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/firstmate-codexapp/SKILL.md",
       "audience": "agent-runtime"
     },
@@ -154,6 +158,14 @@
     },
     {
       "path": ".agents/skills/harness-adapters/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/no-mistakes-supersession/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/no-mistakes-validation/SKILL.md",
       "audience": "agent-runtime"
     },
     {
