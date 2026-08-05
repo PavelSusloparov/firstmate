@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Bind an intentional custom watcher check to its current bytes.
 # Usage: fm-check-register.sh <id>
+# The check script itself must be mode 0700 with no symlink in its path, and
+# it must print exactly one line to stdout when firstmate should wake with
+# that line as the wake reason, or print nothing when there is nothing to
+# report - fm-watch.sh treats any non-empty output as an actionable wake.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
