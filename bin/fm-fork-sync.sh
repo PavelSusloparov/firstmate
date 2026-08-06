@@ -23,9 +23,11 @@
 # Runs only against the genuine primary firstmate checkout - never a project
 # clone, a crewmate/scout worktree, or a secondmate home - by requiring both
 # git-dir == git-common-dir (not a linked worktree) and the absence of the
-# `.fm-secondmate-home` marker. See docs/configuration.md "Fork sync" for the
-# opt-in contract and bin/fm-sessionstart-nudge.sh for how session start
-# launches this in the background so it can never block or delay the nudge.
+# `.fm-secondmate-home` marker, and silently no-ops from inside a no-mistakes
+# gate agent (see bin/fm-gate-refuse-lib.sh) since it pushes to a live remote.
+# See docs/configuration.md "Fork sync" for the opt-in contract and
+# bin/fm-sessionstart-nudge.sh for how session start launches this in the
+# background so it can never block or delay the nudge.
 #
 # Usage: bin/fm-fork-sync.sh
 # FM_ROOT_OVERRIDE overrides the detected repo root (tests only).
@@ -37,6 +39,8 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 
 # shellcheck source=bin/fm-primary-scope-lib.sh
 . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
+# shellcheck source=bin/fm-gate-refuse-lib.sh
+. "$SCRIPT_DIR/fm-gate-refuse-lib.sh"
 
 # Never prompt for credentials and never let a stalled transfer hang around.
 export GIT_TERMINAL_PROMPT=0
@@ -55,6 +59,9 @@ git_c() {
 fm_root_is_secondmate_home "$FM_ROOT" && exit 0
 fm_primary_scope_matches "$FM_ROOT" "$FM_ROOT/state" || exit 0
 
+# Gate: never push from inside a no-mistakes gate agent (best-effort, silent).
+fm_is_gate_agent "$FM_ROOT" && exit 0
+
 # Gate: fork topology only - a distinct `upstream` remote must exist.
 upstream_url=$(git_c remote get-url upstream 2>/dev/null) || exit 0
 origin_url=$(git_c remote get-url origin 2>/dev/null) || exit 0
@@ -66,7 +73,7 @@ if ! git_c "${GIT_NET_OPTS[@]}" fetch --quiet upstream >/dev/null 2>&1; then
   exit 0
 fi
 
-symref=$(git_c ls-remote --symref upstream HEAD 2>/dev/null | awk '$1 == "ref:" { print $2 }')
+symref=$(git_c "${GIT_NET_OPTS[@]}" ls-remote --symref upstream HEAD 2>/dev/null | awk '$1 == "ref:" { print $2 }')
 default_branch=${symref#refs/heads/}
 if [ -z "$default_branch" ] || [ "$default_branch" = "$symref" ]; then
   log "could not determine upstream's default branch, skipping"
