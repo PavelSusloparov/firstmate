@@ -61,6 +61,7 @@ Before printing, the nudge wrapper reads `state/.lock` and walks at most eight p
 If the lock names a live pid in that ancestry, session start already ran in this harness session and the wrapper stays silent.
 Every path in both wrappers exits 0, including malformed state and adapter errors, because a Claude SessionStart exit 2 blocks session initialization.
 A lock another session holds and a truncated digest therefore surface as digest text, while broken GitHub auth surfaces through the deferred network result inline or as a wake; none becomes a refusal to open the session.
+Just before printing, the nudge wrapper also launches `bin/fm-fork-sync.sh` detached in the background when present and executable, so an opt-in fork sync can never delay or fail the nudge; see [`configuration.md`](configuration.md#fork-sync-upstream-remote) for the opt-in contract and the script's own header for the exact gating.
 
 ## Harness transports
 
