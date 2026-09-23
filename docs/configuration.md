@@ -369,7 +369,7 @@ Profile `model` and `effort` fields and rule `why` are optional.
 An omitted model or effort means the selected harness uses its own default for that axis.
 For a `claude` profile, `model` may instead be a pair `{ "cliproxy": "<model>", "direct": "<model>" }`, so one profile names a CLIProxyAPI-only model with its direct fallback, for example `{ "cliproxy": "gpt-5.6-sol", "direct": "opus" }`.
 Firstmate resolves the pair at every dispatch from `bin/fm-harness.sh cliproxy`, passing the `cliproxy` model when it prints `on` and the `direct` model when it prints `off`.
-That verdict is `on` only when the `claude` on `PATH` is the AgentOS CLIProxyAPI shim and AgentOS's saved launch choice (`agentos --configure`, stored in `$XDG_STATE_HOME/agentos/launch.conf`) does not set `proxyCli` off; the script header owns the exact test.
+That verdict is `on` only when the `claude` on `PATH` is the AgentOS CLIProxyAPI shim and AgentOS's saved launch choice is on: either `$XDG_STATE_HOME/agentos/launch.conf` (written by `agentos --configure`) is absent, or it exists and its `proxyCli` line explicitly reads `on`; the script header owns the exact test.
 Because a bare `claude` launch cannot reach a CLIProxyAPI-only model, `fm-spawn.sh` arms the AgentOS route on the launch for a `--model` that is only some pair's `cliproxy` side, and refuses that model before launch while the route is off.
 Every profile array is an implicit quota-aware choice resolved through `quota-array-dispatch`.
 If no dispatch rule fits, firstmate resolves `default` through the same object-or-array path before falling back to `config/crew-harness`.

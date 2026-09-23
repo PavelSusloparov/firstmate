@@ -194,9 +194,11 @@ resolve_secondmate_effort() {
 # now. Both facts AgentOS's own launcher checks must hold: the `claude` on PATH is
 # the AgentOS CLIProxyAPI shim that honours the AGENTOS_CLAUDE_PROXY trigger
 # fm-spawn forwards onto the launch, and AgentOS's saved launch choice
-# ($XDG_STATE_HOME/agentos/launch.conf, written by `agentos --configure`) does not
-# turn proxyCli off. With no saved choice AgentOS itself picks the proxy route
-# whenever that shim is installed, so an absent file counts as on.
+# ($XDG_STATE_HOME/agentos/launch.conf, written by `agentos --configure`) is on.
+# This mirrors AgentOS's own _agentos_launch_toggles: when the file exists it
+# must contain an explicit proxyCli=on line (a missing key, or any other value,
+# reads as off); an absent file counts as on since AgentOS itself picks the
+# proxy route whenever the shim is installed and no choice has been saved yet.
 # Ambient variables are deliberately not consulted: the shim sets
 # ANTHROPIC_BASE_URL only inside a proxied launch, and a Herdr pane never
 # inherits the AGENTOS_CLAUDE_PROXY session variable AgentOS arms under tmux.

@@ -846,6 +846,11 @@ test_cliproxy_detection_reads_shim_and_saved_choice() {
   got=$(cliproxy_verdict "$fakebin" "$xdg")
   [ "$got" = off ] || fail "proxyCli=off must read as off even with the shim installed, got: $got"
 
+  mkdir -p "$xdg/agentos"
+  printf '%s\n' 'firstmate=on' 'headroom=off' > "$xdg/agentos/launch.conf"
+  got=$(cliproxy_verdict "$fakebin" "$xdg")
+  [ "$got" = off ] || fail "a saved-choice file without a proxyCli line must read as off, got: $got"
+
   write_agentos_launch_conf "$xdg" absent
   got=$(cliproxy_verdict "$fakebin" "$xdg")
   [ "$got" = on ] || fail "no saved choice follows AgentOS's shim-installed default of on, got: $got"
