@@ -13,6 +13,10 @@
 #                                        config/secondmate-harness, or empty when absent.
 #        fm-harness.sh secondmate-effort   print the optional EFFORT token from
 #                                        config/secondmate-harness, or empty when absent.
+#        fm-harness.sh cliproxy         print "on" when a claude worker launched now can
+#                                        reach CLIProxyAPI through the AgentOS route, else
+#                                        "off". Resolves a crew-dispatch model pair
+#                                        (docs/configuration.md "Crew dispatch profiles").
 # config/secondmate-harness format: a single line "<harness> [<model>] [<effort>]",
 # whitespace-separated. A bare "<harness>" (today's format) behaves exactly as before:
 # harness only, no model/effort. Only the first non-empty, non-comment line is parsed.
@@ -186,8 +190,35 @@ resolve_secondmate_effort() {
   secondmate_field 3
 }
 
+# Report whether the AgentOS CLIProxyAPI route is on for a claude worker launched
+# now. Both facts AgentOS's own launcher checks must hold: the `claude` on PATH is
+# the AgentOS CLIProxyAPI shim that honours the AGENTOS_CLAUDE_PROXY trigger
+# fm-spawn forwards onto the launch, and AgentOS's saved launch choice
+# ($XDG_STATE_HOME/agentos/launch.conf, written by `agentos --configure`) does not
+# turn proxyCli off. With no saved choice AgentOS itself picks the proxy route
+# whenever that shim is installed, so an absent file counts as on.
+# Ambient variables are deliberately not consulted: the shim sets
+# ANTHROPIC_BASE_URL only inside a proxied launch, and a Herdr pane never
+# inherits the AGENTOS_CLAUDE_PROXY session variable AgentOS arms under tmux.
+# Only the head of the resolved file is read, so a real claude binary is cheap.
+resolve_cliproxy() {
+  local shim conf value
+  shim=$(command -v claude 2>/dev/null) || { echo off; return; }
+  if [ ! -f "$shim" ] || ! head -c 8192 "$shim" 2>/dev/null | grep -q AGENTOS_CLAUDE_PROXY; then
+    echo off
+    return
+  fi
+  conf="${XDG_STATE_HOME:-${HOME:-}/.local/state}/agentos/launch.conf"
+  if [ -f "$conf" ]; then
+    value=$(sed -n 's/^proxyCli=//p' "$conf" 2>/dev/null | tail -n 1)
+    [ "$value" = on ] || { echo off; return; }
+  fi
+  echo on
+}
+
 case "${1:-}" in
   crew) resolve_crew ;;
+  cliproxy) resolve_cliproxy ;;
   secondmate) resolve_secondmate ;;
   secondmate-model) resolve_secondmate_model ;;
   secondmate-effort) resolve_secondmate_effort ;;

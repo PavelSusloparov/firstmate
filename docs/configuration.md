@@ -367,13 +367,17 @@ Both `use` and the optional top-level `default` accept either one profile object
 The single-object form stays fully backward-compatible, and every profile needs `harness`.
 Profile `model` and `effort` fields and rule `why` are optional.
 An omitted model or effort means the selected harness uses its own default for that axis.
+For a `claude` profile, `model` may instead be a pair `{ "cliproxy": "<model>", "direct": "<model>" }`, so one profile names a CLIProxyAPI-only model with its direct fallback, for example `{ "cliproxy": "gpt-5.6-sol", "direct": "opus" }`.
+Firstmate resolves the pair at every dispatch from `bin/fm-harness.sh cliproxy`, passing the `cliproxy` model when it prints `on` and the `direct` model when it prints `off`.
+That verdict is `on` only when the `claude` on `PATH` is the AgentOS CLIProxyAPI shim and AgentOS's saved launch choice (`agentos --configure`, stored in `$XDG_STATE_HOME/agentos/launch.conf`) does not set `proxyCli` off; the script header owns the exact test.
+Because a bare `claude` launch cannot reach a CLIProxyAPI-only model, `fm-spawn.sh` arms the AgentOS route on the launch for a `--model` that is only some pair's `cliproxy` side, and refuses that model before launch while the route is off.
 Every profile array is an implicit quota-aware choice resolved through `quota-array-dispatch`.
 If no dispatch rule fits, firstmate resolves `default` through the same object-or-array path before falling back to `config/crew-harness`.
 If a selected profile carries an effort value the chosen harness does not accept, `fm-spawn.sh` records the requested `effort=` in task meta for traceability but omits the launch flag, and bootstrap reports the invalid harness/effort pair as a `CREW_DISPATCH` diagnostic when it is visible in the file.
 See [`docs/examples/crew-dispatch.json`](examples/crew-dispatch.json) for a starting point to copy into local `config/crew-dispatch.json`.
 When the file exists, bootstrap validates it with `jq`.
 Valid files stay silent by default; with `FM_BOOTSTRAP_VERBOSE_FACTS=1`, bootstrap emits `BOOTSTRAP_INFO: crew dispatch active config/crew-dispatch.json`, one `BOOTSTRAP_INFO:` fact per rule, and one fact for the optional default profile set.
-Malformed JSON, an empty or malformed rule/default array, an unverified harness, or an effort value unsupported by that harness is reported as `CREW_DISPATCH: invalid config/crew-dispatch.json - ...`; missing `jq` is reported through the normal `MISSING: jq` install-consent flow.
+Malformed JSON, an empty or malformed rule/default array, an unverified harness, a model pair that is malformed or not on `claude`, or an effort value unsupported by that harness is reported as `CREW_DISPATCH: invalid config/crew-dispatch.json - ...`; missing `jq` is reported through the normal `MISSING: jq` install-consent flow.
 While the file remains present, no crewmate or scout spawn may proceed without an explicit resolved harness; malformed configuration must be reported and corrected rather than selected around.
 Secondmate homes inherit this file from the primary, so a secondmate's own crewmates apply the same dispatch profile behavior.
 

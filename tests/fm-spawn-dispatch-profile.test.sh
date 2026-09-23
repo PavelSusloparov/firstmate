@@ -792,6 +792,128 @@ test_active_dispatch_profile_does_not_block_secondmate_launch() {
   pass "active crew-dispatch profile does not block secondmate launches"
 }
 
+# CLIProxyAPI model pairs. The fake `claude` on PATH stands in for the AgentOS
+# shim (it carries the AGENTOS_CLAUDE_PROXY trigger text), and XDG_STATE_HOME
+# points AgentOS's saved launch choice at a per-case file, so the route verdict
+# never depends on the developer's own machine.
+enable_cliproxy_pair_profile() {
+  local home=$1
+  printf '%s\n' '{"default":[{"harness":"claude","model":{"cliproxy":"gpt-5.6-sol","direct":"opus"}}]}' \
+    > "$home/config/crew-dispatch.json"
+}
+
+make_fake_cliproxy_shim() {
+  local fakebin=$1
+  printf '%s\n' '#!/bin/sh' '# Managed by AgentOS: CLIProxyAPI command wrapper.' \
+    '# honours AGENTOS_CLAUDE_PROXY' 'exit 0' > "$fakebin/claude"
+  chmod +x "$fakebin/claude"
+}
+
+# write_agentos_launch_conf <xdg-state-home> <on|off|absent>
+write_agentos_launch_conf() {
+  local xdg=$1 proxy=$2
+  mkdir -p "$xdg/agentos"
+  rm -f "$xdg/agentos/launch.conf"
+  [ "$proxy" = absent ] || printf 'firstmate=on\nheadroom=off\nproxyCli=%s\n' "$proxy" > "$xdg/agentos/launch.conf"
+}
+
+cliproxy_verdict() {
+  local fakebin=$1 xdg=$2
+  PATH="$fakebin:/usr/bin:/bin" XDG_STATE_HOME="$xdg" "$ROOT/bin/fm-harness.sh" cliproxy
+}
+
+test_cliproxy_detection_reads_shim_and_saved_choice() {
+  local dir fakebin xdg got
+  dir="$TMP_ROOT/cliproxy-detect"
+  fakebin="$dir/bin"
+  xdg="$dir/state"
+  mkdir -p "$fakebin"
+
+  write_agentos_launch_conf "$xdg" on
+  got=$(cliproxy_verdict "$fakebin" "$xdg")
+  [ "$got" = off ] || fail "no claude on PATH must read as off, got: $got"
+
+  printf '%s\n' '#!/bin/sh' 'exit 0' > "$fakebin/claude"
+  chmod +x "$fakebin/claude"
+  got=$(cliproxy_verdict "$fakebin" "$xdg")
+  [ "$got" = off ] || fail "a claude that is not the AgentOS shim must read as off, got: $got"
+
+  make_fake_cliproxy_shim "$fakebin"
+  got=$(cliproxy_verdict "$fakebin" "$xdg")
+  [ "$got" = on ] || fail "shim plus proxyCli=on must read as on, got: $got"
+
+  write_agentos_launch_conf "$xdg" off
+  got=$(cliproxy_verdict "$fakebin" "$xdg")
+  [ "$got" = off ] || fail "proxyCli=off must read as off even with the shim installed, got: $got"
+
+  write_agentos_launch_conf "$xdg" absent
+  got=$(cliproxy_verdict "$fakebin" "$xdg")
+  [ "$got" = on ] || fail "no saved choice follows AgentOS's shim-installed default of on, got: $got"
+  pass "fm-harness.sh cliproxy requires the AgentOS shim and honours the saved proxyCli choice"
+}
+
+test_cliproxy_pair_model_arms_route_when_on() {
+  local rec id out status launch xdg
+  id=profile-cliproxy-on-z19
+  rec=$(make_spawn_case profile-cliproxy-on claude "$id")
+  read_case_record "$rec"
+  enable_cliproxy_pair_profile "$HOME_DIR"
+  make_fake_cliproxy_shim "$FAKEBIN_DIR"
+  xdg="$CASE_DIR/xdg-state"
+  write_agentos_launch_conf "$xdg" on
+
+  out=$(XDG_STATE_HOME="$xdg" run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --harness claude --model gpt-5.6-sol)
+  status=$?
+  expect_code 0 "$status" "cliproxy-side model should spawn while the route is on"$'\n'"$out"
+  assert_meta_profile "$HOME_DIR/state/$id.meta" claude gpt-5.6-sol default
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "AGENTOS_CLAUDE_PROXY=1 env -u CURSOR_AGENT -u CURSOR_INVOKED_AS CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false claude --dangerously-skip-permissions --model 'gpt-5.6-sol'" \
+    "cliproxy-side model launch did not carry the AgentOS route trigger"
+  pass "a cliproxy-side model spawns with the AgentOS route armed while CLIProxyAPI is on"
+}
+
+test_cliproxy_pair_model_refused_when_off() {
+  local rec id out status xdg
+  id=profile-cliproxy-off-z20
+  rec=$(make_spawn_case profile-cliproxy-off claude "$id")
+  read_case_record "$rec"
+  enable_cliproxy_pair_profile "$HOME_DIR"
+  make_fake_cliproxy_shim "$FAKEBIN_DIR"
+  xdg="$CASE_DIR/xdg-state"
+  write_agentos_launch_conf "$xdg" off
+
+  out=$(XDG_STATE_HOME="$xdg" run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --harness claude --model gpt-5.6-sol)
+  status=$?
+  [ "$status" -ne 0 ] || fail "cliproxy-side model must be refused while the route is off"
+  assert_contains "$out" "CLIProxyAPI route is off" "refusal did not name the off route"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "refused spawn must not publish a task record"
+  [ ! -s "$LAUNCH_LOG" ] || fail "refused spawn must not send a launch command"
+  pass "a cliproxy-side model is refused before launch while CLIProxyAPI is off"
+}
+
+test_cliproxy_pair_direct_model_spawns_without_route() {
+  local rec id out status launch xdg
+  id=profile-cliproxy-direct-z21
+  rec=$(make_spawn_case profile-cliproxy-direct claude "$id")
+  read_case_record "$rec"
+  enable_cliproxy_pair_profile "$HOME_DIR"
+  make_fake_cliproxy_shim "$FAKEBIN_DIR"
+  xdg="$CASE_DIR/xdg-state"
+  write_agentos_launch_conf "$xdg" off
+
+  out=$(XDG_STATE_HOME="$xdg" run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --harness claude --model opus)
+  status=$?
+  expect_code 0 "$status" "direct-side model should spawn while the route is off"$'\n'"$out"
+  assert_meta_profile "$HOME_DIR/state/$id.meta" claude opus default
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "claude --dangerously-skip-permissions --model 'opus'" "direct-side launch did not thread the model"
+  assert_not_contains "$launch" "AGENTOS_CLAUDE_PROXY" "direct-side launch must not arm the CLIProxyAPI route"
+  pass "the direct side of a model pair spawns on a bare claude launch while CLIProxyAPI is off"
+}
+
 test_no_profile_keeps_claude_profile_defaults
 test_non_cursor_launch_clears_inherited_cursor_markers
 test_relative_home_overrides_launch_with_absolute_cross_process_paths
@@ -823,5 +945,9 @@ test_claude_forwards_firstmate_config_dir_when_set
 test_claude_omits_config_dir_prefix_when_unset
 test_non_claude_harness_ignores_config_dir
 test_active_dispatch_profile_does_not_block_secondmate_launch
+test_cliproxy_detection_reads_shim_and_saved_choice
+test_cliproxy_pair_model_arms_route_when_on
+test_cliproxy_pair_model_refused_when_off
+test_cliproxy_pair_direct_model_spawns_without_route
 
 echo "# all fm-spawn-dispatch-profile tests passed"

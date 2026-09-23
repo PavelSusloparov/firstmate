@@ -51,6 +51,7 @@ Below-floor is rare: bootstrap enforces `FM_QUOTA_AXI_MIN` and normally reports 
 Read `quota-axi auth --json` only when a candidate's credential surface is in question.
 
 For each candidate, preserve explicit `harness`, `model`, and `provider`; `harness-adapters` owns identity, and model/provider never infer harness.
+A candidate whose `model` is a cliproxy/direct pair is first resolved to its one concrete model under [`docs/configuration.md`](../../../docs/configuration.md) "Crew dispatch profiles", and only that model is evaluated.
 
 ## Three gates, then spendPriority
 

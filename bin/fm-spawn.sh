@@ -129,6 +129,11 @@
 #   the file governs the spawn, its model/effort tokens are re-resolved on every
 #   respawn exactly like the harness axis, and explicit --model/--effort flags
 #   still win over the file's tokens.
+#   A claude crewmate/scout --model that is only the cliproxy side of a
+#   config/crew-dispatch.json model pair needs the AgentOS CLIProxyAPI route:
+#   the spawn prefixes AGENTOS_CLAUDE_PROXY=1 onto the launch when
+#   `fm-harness.sh cliproxy` prints on, and refuses before endpoint creation
+#   when it prints off. Raw launch commands are left alone.
 #   A --secondmate spawn also propagates the primary's declared inherited local
 #   material, so the secondmate's OWN crewmates inherit primary config and the
 #   secondmate receives the primary's read-only shared captain-preference file
@@ -1424,6 +1429,40 @@ if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
     fi
   fi
 fi
+
+# A crew-dispatch profile may pair a CLIProxyAPI-only model with a direct one
+# (docs/configuration.md "Crew dispatch profiles"). A bare claude launch cannot
+# reach the CLIProxyAPI side, so when --model names it this spawn forwards the
+# AgentOS route trigger onto the launch while `fm-harness.sh cliproxy` reports the
+# route on, and refuses otherwise instead of starting a worker whose first request
+# fails on an unavailable model. A model counts as CLIProxyAPI-only when it is some
+# pair's cliproxy side and no pair's direct side; without jq the pairs cannot be
+# read, and bootstrap already reports that as MISSING: jq.
+cliproxy_only_model() {
+  command -v jq >/dev/null 2>&1 || return 1
+  jq -e --arg m "$1" '
+    def profiles($v): if ($v | type) == "array" then $v elif ($v | type) == "object" then [$v] else [] end;
+    [((.rules // [])[]? | profiles(.use?)[]?), profiles(.default?)[]?]
+    | map(.model? | select(type == "object"))
+    | any(.cliproxy == $m) and (any(.direct == $m) | not)
+  ' "$CONFIG/crew-dispatch.json" >/dev/null 2>&1
+}
+
+CLIPROXY_ROUTE=0
+case "$ARG3" in
+  *' '*) ;;  # a raw launch command carries its own routing
+  *)
+    if [ "$KIND" != secondmate ] && [ "$HARNESS" = claude ] && [ -n "$MODEL" ] \
+       && [ -f "$CONFIG/crew-dispatch.json" ] && cliproxy_only_model "$MODEL"; then
+      if [ "$("$SCRIPT_DIR/fm-harness.sh" cliproxy)" = on ]; then
+        CLIPROXY_ROUTE=1
+      else
+        echo "error: model '$MODEL' is the CLIProxyAPI side of a config/crew-dispatch.json model pair, but the CLIProxyAPI route is off (bin/fm-harness.sh cliproxy); pass that pair's direct model instead" >&2
+        exit 1
+      fi
+    fi
+    ;;
+esac
 
 secondmate_registry_value() {
   secondmate_registry_field "$DATA/secondmates.md" "$1" "$2"
@@ -3049,6 +3088,12 @@ esac
 # an unset value is the single-store default and needs no prefix.
 if [ "$HARNESS" = claude ] && [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
   LAUNCH="CLAUDE_CONFIG_DIR=$(shell_quote "$CLAUDE_CONFIG_DIR") $LAUNCH"
+fi
+# The same daemon boundary is why the CLIProxyAPI route rides the launch itself:
+# a pane inherits nothing from this process, so the AgentOS shim's trigger is set
+# here for a model that needs the route (cliproxy_only_model above).
+if [ "$CLIPROXY_ROUTE" = 1 ]; then
+  LAUNCH="AGENTOS_CLAUDE_PROXY=1 $LAUNCH"
 fi
 if [ "$KIND" = secondmate ]; then
   sq_home=$(shell_quote "$PROJ_ABS")
